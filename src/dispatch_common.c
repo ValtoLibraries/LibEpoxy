@@ -41,7 +41,7 @@
  * \section features_sec Features
  *
  *   - Automatically initializes as new GL functions are used.
- *   - GL 4.4 core and compatibility context support.
+ *   - GL 4.6 core and compatibility context support.
  *   - GLES 1/2/3 context support.
  *   - Knows about function aliases so (e.g.) `glBufferData()` can be
  *     used with `GL_ARB_vertex_buffer_object` implementations, along
@@ -175,14 +175,14 @@
 
 #ifdef __APPLE__
 #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
-#elif defined(ANDROID)
+#elif defined(__ANDROID__)
 #define GLX_LIB "libGLESv2.so"
 #else
 #define GLVND_GLX_LIB "libGLX.so.1"
 #define GLX_LIB "libGL.so.1"
 #endif
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 #define EGL_LIB "libEGL.so"
 #define GLES1_LIB "libGLESv1_CM.so"
 #define GLES2_LIB "libGLESv2.so"
@@ -296,8 +296,7 @@ get_dlopen_handle(void **handle, const char *lib_name, bool exit_on_fail)
         return true;
 
     if (!library_initialized) {
-        fprintf(stderr,
-                "Attempting to dlopen() while in the dynamic linker.\n");
+        fputs("Attempting to dlopen() while in the dynamic linker.\n", stderr);
         abort();
     }
 
@@ -393,10 +392,10 @@ epoxy_is_desktop_gl(void)
 }
 
 static int
-epoxy_internal_gl_version(int error_version)
+epoxy_internal_gl_version(GLenum version_string, int error_version)
 {
-    const char *version = (const char *)glGetString(GL_VERSION);
-    GLint major, minor;
+    const char *version = (const char *)glGetString(version_string);
+    GLint major, minor, factor;
     int scanf_count;
 
     if (!version)
@@ -413,7 +412,13 @@ epoxy_internal_gl_version(int error_version)
                 version);
         exit(1);
     }
-    return 10 * major + minor;
+
+    if (minor >= 10)
+        factor = 100;
+    else
+        factor = 10;
+
+    return factor * major + minor;
 }
 
 /**
@@ -434,7 +439,7 @@ epoxy_internal_gl_version(int error_version)
 int
 epoxy_gl_version(void)
 {
-    return epoxy_internal_gl_version(0);
+    return epoxy_internal_gl_version(GL_VERSION, 0);
 }
 
 int
@@ -443,7 +448,32 @@ epoxy_conservative_gl_version(void)
     if (api.begin_count)
         return 100;
 
-    return epoxy_internal_gl_version(100);
+    return epoxy_internal_gl_version(GL_VERSION, 100);
+}
+
+/**
+ * @brief Returns the version of the GL Shading Language we are using
+ *
+ * The version is encoded as:
+ *
+ * ```
+ *
+ *   version = major * 100 + minor
+ *
+ * ```
+ *
+ * So it can be easily used for version comparisons.
+ *
+ * @return The encoded version of the GL Shading Language we are using
+ */
+int
+epoxy_glsl_version(void)
+{
+    if (epoxy_gl_version() >= 20 ||
+        epoxy_has_gl_extension ("GL_ARB_shading_language_100"))
+        return epoxy_internal_gl_version(GL_SHADING_LANGUAGE_VERSION, 0);
+
+    return 0;
 }
 
 /**
@@ -651,8 +681,10 @@ epoxy_gl_dlsym(const char *name)
 #else
     void *sym;
 
+# if defined(OPENGL_LIB)
     if (!api.gl_handle)
 	get_dlopen_handle(&api.gl_handle, OPENGL_LIB, false);
+# endif
 
     if (api.gl_handle)
 	return do_dlsym(&api.gl_handle, NULL, name, true);
@@ -718,7 +750,7 @@ epoxy_get_core_proc_address(const char *name, int core_version)
 {
 #ifdef _WIN32
     int core_symbol_support = 11;
-#elif defined(ANDROID)
+#elif defined(__ANDROID__)
     /**
      * All symbols must be resolved through eglGetProcAddress
      * on Android
@@ -866,6 +898,13 @@ PFNGLENDPROC epoxy_glEnd = epoxy_glEnd_wrapped;
 
 epoxy_resolver_failure_handler_t epoxy_resolver_failure_handler;
 
+/**
+ * Sets the function that will be called every time Epoxy fails to
+ * resolve a symbol.
+ *
+ * @param handler The new handler function
+ * @return The previous handler function
+ */
 epoxy_resolver_failure_handler_t
 epoxy_set_resolver_failure_handler(epoxy_resolver_failure_handler_t handler)
 {

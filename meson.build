@@ -1,11 +1,11 @@
-project('libepoxy', 'c', version: '1.5.0',
+project('libepoxy', 'c', version: '1.5.1',
         default_options: [
           'buildtype=debugoptimized',
           'c_std=gnu99',
           'warning_level=1',
         ],
         license: 'MIT',
-        meson_version: '>= 0.39.1')
+        meson_version: '>= 0.44.0')
 
 epoxy_version = meson.project_version().split('.')
 epoxy_major_version = epoxy_version[0].to_int()
@@ -34,7 +34,7 @@ conf.set('HAVE_KHRPLATFORM_H', cc.has_header('KHR/khrplatform.h', required: fals
 # configure time switch to enable or disable it; in case
 # the "auto" default value is set, we only enable GLX
 # support on Linux and Unix
-enable_glx = get_option('enable-glx')
+enable_glx = get_option('glx')
 if enable_glx == 'auto'
   if host_system == 'windows'
     build_glx = false
@@ -53,7 +53,7 @@ elif enable_glx == 'no'
   build_glx = false
 endif
 
-enable_egl = get_option('enable-egl')
+enable_egl = get_option('egl')
 if enable_egl == 'auto'
   if host_system == 'windows'
     build_egl = false
@@ -68,6 +68,14 @@ elif enable_egl == 'yes'
   build_egl = true
 elif enable_egl == 'no'
   build_egl = false
+endif
+
+enable_x11 = get_option('x11')
+if not enable_x11
+  if enable_glx == 'yes'
+    error('GLX support is explicitly enabled, but X11 was disabled')
+  endif
+  build_glx = false
 endif
 
 # The remaining platform specific API for GL/GLES are enabled
@@ -88,6 +96,7 @@ endif
 
 conf.set10('ENABLE_GLX', build_glx)
 conf.set10('ENABLE_EGL', build_egl)
+conf.set10('ENABLE_X11', enable_x11)
 
 # Compiler flags, taken from the Xorg macros
 if cc.get_id() == 'msvc'
@@ -150,12 +159,7 @@ else
   test_cflags = []
 endif
 
-common_cflags = []
-foreach cflag: test_cflags
-  if cc.has_argument(cflag)
-    common_cflags += cflag
-  endif
-endforeach
+common_cflags = cc.get_supported_arguments(test_cflags)
 
 libtype = get_option('default_library')
 
@@ -217,26 +221,6 @@ if host_system == 'windows'
   gdi32_dep = cc.find_library('gdi32', required: true)
 endif
 
-# PkgConfig file
-pkgconf = configuration_data()
-pkgconf.set('prefix', epoxy_prefix)
-pkgconf.set('exec_prefix', epoxy_prefix)
-pkgconf.set('libdir', epoxy_libdir)
-pkgconf.set('includedir', epoxy_includedir)
-pkgconf.set10('epoxy_has_glx', build_glx)
-pkgconf.set10('epoxy_has_egl', build_egl)
-pkgconf.set10('epoxy_has_wgl', build_wgl)
-pkgconf.set('PACKAGE_VERSION', meson.project_version())
-if dl_dep.found()
-  pkgconf.set('DLOPEN_LIBS', '-ldl')
-endif
-
-configure_file(input: 'epoxy.pc.in',
-               output: 'epoxy.pc',
-               configuration: pkgconf,
-               install: true,
-               install_dir: join_paths(epoxy_libdir, 'pkgconfig'))
-
 # Python
 python = import('python3').find_python()
 if not python.found()
@@ -260,7 +244,7 @@ subdir('include/epoxy')
 subdir('src')
 subdir('test')
 
-if get_option('enable-docs')
+if get_option('docs')
   doxygen = find_program('doxygen', required: false)
   if doxygen.found()
     subdir('doc')
