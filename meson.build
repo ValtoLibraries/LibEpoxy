@@ -36,38 +36,16 @@ conf.set('HAVE_KHRPLATFORM_H', cc.has_header('KHR/khrplatform.h', required: fals
 # support on Linux and Unix
 enable_glx = get_option('glx')
 if enable_glx == 'auto'
-  if host_system == 'windows'
-    build_glx = false
-  elif host_system == 'darwin'
-    build_glx = false
-  elif host_system == 'android'
-    build_glx = false
-  elif host_system == 'haiku'
-    build_glx = false
-  else
-    build_glx = true
-  endif
-elif enable_glx == 'yes'
-  build_glx = true
-elif enable_glx == 'no'
-  build_glx = false
+  build_glx = not ['windows', 'darwin', 'android', 'haiku'].contains(host_system)
+else
+  build_glx = enable_glx == 'yes'
 endif
 
 enable_egl = get_option('egl')
 if enable_egl == 'auto'
-  if host_system == 'windows'
-    build_egl = false
-  elif host_system == 'darwin'
-    build_egl = false
-  elif host_system == 'android'
-    build_egl = true
-  else
-    build_egl = true
-  endif
-elif enable_egl == 'yes'
-  build_egl = true
-elif enable_egl == 'no'
-  build_egl = false
+  build_egl = not ['windows', 'darwin'].contains(host_system)
+else
+  build_egl = enable_egl == 'yes'
 endif
 
 enable_x11 = get_option('x11')
@@ -81,15 +59,12 @@ endif
 # The remaining platform specific API for GL/GLES are enabled
 # depending on the platform we're building for
 if host_system == 'windows'
-  build_apple = false
   build_wgl = true
   has_znow = true
 elif host_system == 'darwin'
-  build_apple = true
   build_wgl = false
   has_znow = false
 else
-  build_apple = false
   build_wgl = false
   has_znow = true
 endif
@@ -208,7 +183,7 @@ if not gles1_dep.found()
 endif
 
 # On windows, the DLL has to have all of its functions
-# resolved at link time, so we have to link directly aginst
+# resolved at link time, so we have to link directly against
 # opengl32.  But that's the only GL provider, anyway.
 if host_system == 'windows'
   opengl32_dep = cc.find_library('opengl32', required: true)
@@ -242,7 +217,10 @@ libepoxy_inc = [
 
 subdir('include/epoxy')
 subdir('src')
-subdir('test')
+
+if get_option('tests')
+  subdir('test')
+endif
 
 if get_option('docs')
   doxygen = find_program('doxygen', required: false)
